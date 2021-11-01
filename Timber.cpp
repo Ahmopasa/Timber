@@ -1,533 +1,393 @@
-#include <iostream>
+#include "BackgroundHandler.h"
+#include "Tree.h"
+#include "Bee.h"
+#include "Cloud.h"
+#include "TextHandler.h"
+#include "BarHandler.h"
+#include "Branch.h"
+#include "Player.h"
+#include "Gravestone.h"
+#include "Axe.h"
+#include "FlyingLog.h"
+#include "SoundHandler.h"
+
+#include <vector>
+#include <random>
 #include <sstream>
-#include <SFML/Graphics.hpp>
-#include <SFML/Audio.hpp>
+#include <utility>
 
-using namespace sf;
+const int TOTAL_CLOUDS_NUMBER = 10;
+const int TOTAL_BRANCH_NUMBER = 6;
 
-// Function Declarations
-void updateBranches(int seed);
-
-const int NUM_BRANCHES = 6;
-Sprite branches[NUM_BRANCHES];
-
-// Where is the player/branch?
-enum class side { LEFT, RIGHT, NONE};
-side branchPositions[NUM_BRANCHES];
+void updateBranches(std::vector<Branch>& branchVector);
 
 int main()
 {
-	// VideoMode Object'll be created.
-	VideoMode vm{1920, 1080};
+    // Create a video mode object
+    sf::VideoMode vm(1920, 1080);
+    // Create and open a window for the game
+    sf::RenderWindow window(vm, "Timber!!!", sf::Style::Fullscreen);
 
-	// Create & open a window.
-	RenderWindow window(vm, "Timber!!!", Style::Fullscreen);
+    // In game sprites
+    BackgroundHandler mainBackGround{};
+    Tree fellingTree{810, 0};
+    Bee flyingBee{0, 800};
+    std::vector<Cloud> clouds{};
+    clouds.reserve(TOTAL_CLOUDS_NUMBER);
+    Cloud tempCloud{};
+    for (size_t i = 0; i < TOTAL_CLOUDS_NUMBER; i++)
+    {       
+        clouds.push_back(tempCloud);
+    }
+    Branch tempBranch{};
+    std::vector<Branch> branches{};
+    branches.reserve(TOTAL_BRANCH_NUMBER);
+    for (size_t i = 0; i < TOTAL_BRANCH_NUMBER; i++)
+    {
+        branches.push_back(tempBranch);
+    }
 
-	// A texture to hold a graphic on the GPU
-	Texture textureBackground;
-	textureBackground.loadFromFile("graphics/background.png");
+    Player mainPlayer{580, 720};
+    Gravestone ripStone{600, 860};
+    Axe mainPlayerAxe{ 700, 830 };
+    FlyingLog pieceOfWood{ 810, 720 };
 
-	// A sprite, that a texture attached. 
-	Sprite spriteBackground;
-	spriteBackground.setTexture(textureBackground);
-	spriteBackground.setPosition(0, 0);
+    // In game text
+    TextHandler inGameTexts{};
+    unsigned int score{};
 
-	// A tree sprite
-	Texture textureTree;
-	textureTree.loadFromFile("graphics/tree.png");
-	Sprite spriteTree;
-	spriteTree.setTexture(textureTree);
-	spriteTree.setPosition(810,0);
+    // In game bar
+    BarHandler inGameTimeBar{};
 
-	// Prepare the bee
-	Texture textureBee;
-	textureBee.loadFromFile("graphics/bee.png");
-	Sprite spriteBee;
-	spriteBee.setTexture(textureBee);
-	spriteBee.setPosition(0, 800);
-	//Is the bee currently moving?
-	bool beeActive = false;
-	// How fast can the bee fly?
-	float beeSpeed = 0.0f;
+    // Time management
+    sf::Clock clock;
 
-	// Make 3 cloud sprites from 1 texture...
-	Texture textureCloud;
-	textureCloud.loadFromFile("graphics/cloud.png");
-	Sprite spriteCloud1;
-	Sprite spriteCloud2;
-	Sprite spriteCloud3;
-	spriteCloud1.setTexture(textureCloud);
-	spriteCloud2.setTexture(textureCloud);
-	spriteCloud3.setTexture(textureCloud);
-	spriteCloud1.setPosition(0,0);
-	spriteCloud2.setPosition(0,250);
-	spriteCloud3.setPosition(0,500);
-	//Are the clouds currently on the screen?
-	bool cloud1Active = false;
-	bool cloud2Active = false;
-	bool cloud3Active = false;
-	// How fast is each cloud?
-	float cloud1speed = 0.0f;
-	float cloud2speed = 0.0f;
-	float cloud3speed = 0.0f;
+    // To start the game
+    bool isGamePaused = true;
 
-	// Variables to control time itself
-	Clock clock;
-	// Time Bar
-	RectangleShape timeBar;
-	float timeBarStartWidth = 400;
-	float timeBarHeight = 80;
-	timeBar.setSize(Vector2f(timeBarStartWidth, timeBarHeight));
-	timeBar.setFillColor(Color::Red);
-	timeBar.setPosition((1920 / 2.0f) - (timeBarStartWidth / 2.0f), 980.0f);
-	Time gameTimeTotal;
-	float timeRemaining = 6.0f;
-	float timeBarWidthPerSecond = timeBarStartWidth / timeRemaining;
+    // To determine when to listen for chops and when to ignore them
+    bool acceptInput = false;
 
-	// Track whether the game is running
-	bool paused = true;
+    // Handle Sounds
+    SoundHandler mySounds{};
 
-	// Draw some text
-	int score = 0;
-	Text messageText;
-	Text scoreText;
-	// We need to choose a Font
-	Font font;
-	font.loadFromFile("fonts/font.ttf");
-	// Set the font to our message
-	messageText.setFont(font);
-	scoreText.setFont(font);
-	// Assign the actual message
-	messageText.setString("Please, press enter to start!");
-	scoreText.setString("Score = 0");
-	// Make it really big
-	messageText.setCharacterSize(75);
-	scoreText.setCharacterSize(100);
-	// Choose a color
-	messageText.setFillColor(Color::White);
-	scoreText.setFillColor(Color::White);
-	// Position the text
-	FloatRect textRect = messageText.getLocalBounds();
-	messageText.setOrigin(textRect.left + textRect.width / 2.0f, textRect.top + textRect.height / 2.0f);
-	messageText.setPosition(1920 / 2.0f, 1000 / 2.0f);
-	scoreText.setPosition(20, 20);
+    while (window.isOpen())
+    {
+        /****************************************
+        Handle the players input
+        ****************************************/
+        
+        sf::Event event;
+        while (window.pollEvent(event))
+        {
+            if (event.type == sf::Event::KeyReleased && !isGamePaused)
+            {
+                // Listen to key pressing again.
+                acceptInput = true;
 
-	// Prepare 6 branches
-	Texture textureBranch;
-	textureBranch.loadFromFile("graphics/branch.png");
-	// Set the texture for each branch sprite
-	for (int i = 0; i < NUM_BRANCHES; i++)
-	{
-		branches[i].setTexture(textureBranch);
-		branches[i].setPosition(-2000, -2000);
-		// Set the sprite's origin to dead centre...
-		// So, we can then spin it round w/o changing its position
-		branches[i].setOrigin(220, 20);
-	}
+                // Hide the axe
+                mainPlayerAxe.getSprite().setPosition(2000.0f, mainPlayerAxe.getSprite().getPosition().y);
+            }
+        }
 
-	// Prepare the player
-	Texture texturePlayer;
-	texturePlayer.loadFromFile("graphics/player.png");
-	Sprite spritePlayer;
-	spritePlayer.setTexture(texturePlayer);
-	spritePlayer.setPosition(580, 720);
-	// The player starts on the LEFT
-	side playerSide = side::LEFT;
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Escape))
+        {
+            window.close();
+        }
 
-	// Prepare the gravestone
-	Texture textureRIP;
-	textureRIP.loadFromFile("graphics/rip.png");
-	Sprite spriteRIP;
-	spriteRIP.setTexture(textureRIP);
-	spriteRIP.setPosition(600, 860);
+        // Starts the game...
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Return))
+        {
+            isGamePaused = false;
+            score = 0;
+            inGameTimeBar.setRemainingGameTime(6);
 
-	// Prepare the axe
-	Texture textureAxe;
-	textureAxe.loadFromFile("graphics/axe.png");
-	Sprite spriteAxe;
-	spriteAxe.setTexture(textureAxe);
-	spriteAxe.setPosition(700, 830);
-	// Line the axe with the tree
-	const float AXE_POSITION_LEFT = 700;
-	const float AXE_POSITION_RIGHT = 1075;
+            // Setting up branches one again...
+            for (size_t i = 1; i < branches.size(); i++)
+            {
+                branches.at(i).getBranchPosition() = branchSide::NONE;
+            }
 
-	// Prepare the flying log
-	Texture textureLog;
-	textureLog.loadFromFile("graphics/log.png");
-	Sprite spriteLog;
-	spriteLog.setTexture(textureLog);
-	spriteLog.setPosition(810, 720);
-	// Some useful log related variables
-	bool logActive = false;
-	float logSpeedX = 1000;
-	float logSpeedY = -1500;
+            // Gravestone is hidden now.
+            ripStone.getSprite().setPosition(static_cast<float>(675), static_cast<float>(2000));
 
-	// Control the player input
-	bool acceptInput = false;
+            // The player is in the position
+            mainPlayer.getSprite().setPosition(static_cast<float>(580), static_cast<float>(720));
 
-	// Prepare the sound
-	// For chopping
-	SoundBuffer chopBuffer;
-	chopBuffer.loadFromFile("sound/chop.wav");
-	Sound chop;
-	chop.setBuffer(chopBuffer);
-	
-	// For dying
-	SoundBuffer deathBuffer;
-	deathBuffer.loadFromFile("sound/death.wav");
-	Sound death;
-	death.setBuffer(deathBuffer);
+            acceptInput = true;
+        }
 
-	// For being out of time
-	SoundBuffer ootBuffer;
-	ootBuffer.loadFromFile("sound/out_of_time.wav");
-	Sound outOfTime;
-	outOfTime.setBuffer(ootBuffer);
+        // Wraps the player controls to be able to accept new inputs
+        if (acceptInput)
+        {
 
-	while (window.isOpen())
-	{
-		Event event;
-		while (window.pollEvent(event))
-		{
-			if (event.type == Event::KeyReleased && !paused)
-			{
-				// Listen for key presses again
-				acceptInput = true;
-				
-				// hide the axe
-				spriteAxe.setPosition(2000, spriteAxe.getPosition().y);
-			}
-		}
+            // Handling to press right cursor...
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Right))
+            {
+                // Make sure the player is on the right
+                mainPlayer.getBranchPosition() = playerSide::RIGHT;
+                ++score;
 
-		// Handles the player input...
-		if (Keyboard::isKeyPressed(Keyboard::Escape))
-		{
-			window.close();
-		}
+                // Increase the time
+                inGameTimeBar.setRemainingGameTime(static_cast<float>(inGameTimeBar.getRemainingGameTime() + (2 / score) + 0.15f));
 
-		// Start the game
-		if (Keyboard::isKeyPressed(Keyboard::Return))
-		{
-			paused = false;
-			score = 0;
-			timeRemaining = 6;
+                // Change the axe position
+                const auto& [firstAxeValue, secondAxeValue] = mainPlayerAxe.getAxePositions();
+                mainPlayerAxe.getSprite().setPosition(secondAxeValue, mainPlayerAxe.getSprite().getPosition().y);
 
-			// Make all the branches disappear
-			// starting in the second position
-			for (int i = 1; i < NUM_BRANCHES; i++)
-			{
-				branchPositions[i] = side::NONE;
-			}
-			
-			// make sure the gravestone is hidden
-			spriteRIP.setPosition(675, 2000);
+                // Change the player position
+                mainPlayer.getSprite().setPosition(1200.0f, 720.0f);
 
-			// Move the player into position
-			spritePlayer.setPosition(580, 720);
-			acceptInput = true;
-		}
+                updateBranches(branches);
 
-		// Wrap the player controls to make sure accepting input
-		if (acceptInput)
-		{
-			// Handle pressing the right cursor key
-			if (Keyboard::isKeyPressed(Keyboard::Right))
-			{
-				playerSide = side::RIGHT;
-				score++;
+                // Make the log flying to the right
+                pieceOfWood.getSprite().setPosition(810.0f, 720.0f);
+                pieceOfWood.setSpeedX(-5000.0f);
+                pieceOfWood.setCutStatus(true);
+                acceptInput = false;
 
-				// Add to the amount of time remaining
-				timeRemaining += (2 / score) + .15;
-				spriteAxe.setPosition(AXE_POSITION_RIGHT, spriteAxe.getPosition().y);
-				spritePlayer.setPosition(1200, 720);
+                mySounds.getChop().play();
+            }
 
-				// Update the branches
-				updateBranches(score);
+            // Handling to press left cursor...
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Left))
+            {
+                // Make sure the player is on the right
+                mainPlayer.getBranchPosition() = playerSide::LEFT;
+                ++score;
 
-				// Set the log flying to the left
-				spriteLog.setPosition(810, 720);
-				logSpeedX = -5000;
-				logActive = true;
-				acceptInput = false;
+                // Increase the time
+                inGameTimeBar.setRemainingGameTime(static_cast<float>(inGameTimeBar.getRemainingGameTime() + (2 / score) + 0.15f));
 
-				// Play a chop sound
-				chop.play();
-			}
+                // Change the axe position
+                const auto& [firstAxeValue, secondAxeValue] = mainPlayerAxe.getAxePositions();
+                mainPlayerAxe.getSprite().setPosition(firstAxeValue, mainPlayerAxe.getSprite().getPosition().y);
 
-			// Handle pressing the left cursor key
-			if (Keyboard::isKeyPressed(Keyboard::Left))
-			{
-				playerSide = side::LEFT;
-				score++;
+                // Change the player position
+                mainPlayer.getSprite().setPosition(580, 720.0f);
 
-				// Add to the amount of time remaining
-				timeRemaining += (2 / score) + .15;
-				spriteAxe.setPosition(AXE_POSITION_LEFT, spriteAxe.getPosition().y);
-				spritePlayer.setPosition(580, 720);
+                updateBranches(branches);
 
-				// Update the branches
-				updateBranches(score);
+                // Make the log flying to the left
+                pieceOfWood.getSprite().setPosition(810.0f, 720.0f);
+                pieceOfWood.setSpeedX(5000.0f);
+                pieceOfWood.setCutStatus(true);
+                acceptInput = false;
 
-				// Set the log flying to the left
-				spriteLog.setPosition(810, 720);
-				logSpeedX = 5000;
-				logActive = true;
-				acceptInput = false;
+                mySounds.getChop().play();
+            }
+        }
+        
+        /****************************************
+        Update the scene
+        ****************************************/
 
-				// Play a chop sound
-				chop.play();
-			}
-		}
+        if (!isGamePaused)
+        {
+            // Measure Time
+            sf::Time elapsedTime = clock.restart();
 
-		// ## Update the screen ##
-		if (!paused)
-		{
-			// Measure time
-			Time dt = clock.restart();
-			// Subtract from the amount of time remaining
-			timeRemaining -= dt.asSeconds();
-			// Size up the time bar
-			timeBar.setSize(Vector2f(timeBarWidthPerSecond * timeRemaining, timeBarHeight));
-			if (timeRemaining <= 0.0f)
-			{
-				// Pause the game...
-				paused = true;
-				
-				// Chance the message shown on the screen...
-				messageText.setString("Out of time!!!");
-				// Reposition the text based on its new size
-				FloatRect textRect = messageText.getLocalBounds();
-				messageText.setOrigin(textRect.left + textRect.width / 2.0f, textRect.top + textRect.height / 2.0f);
-				messageText.setPosition(1920 / 2.0f, 1080 / 2.0f);
+            // Handle Time Bar According to the Time
+            inGameTimeBar.setRemainingGameTime((inGameTimeBar.getRemainingGameTime() - elapsedTime.asSeconds()));
+            auto [shrinkRatio, remainingTime, timeBarHeight] = inGameTimeBar.getTimeBarVariables();
+            inGameTimeBar.getTimeBar().setSize(sf::Vector2f{ shrinkRatio * remainingTime, timeBarHeight});
+            if (remainingTime <= 0.0f)
+            {
+                isGamePaused = true;
 
-				// Play a chop sound
-				outOfTime.play();
-			}
+                // Change the message shown to the player.
+                inGameTexts.setMessageText("Out of time!!!");
 
-			// Setup the bee
-			if (!beeActive)
-			{
-				// How fast is the bee...
-				srand((unsigned int)(time(0)));
-				beeSpeed = static_cast<float>((rand() % 200) + 200);
-				// How high is the bee...
-				srand((unsigned int)(time(0)) * 10);
-				float height = static_cast<float>((rand() % 500) + 500);
-				spriteBee.setPosition(2000.f, height);
-				beeActive = true;
-			}
-			// Move the bee
-			else
-			{
-				spriteBee.setPosition(spriteBee.getPosition().x - (beeSpeed * dt.asSeconds()), spriteBee.getPosition().y);
-				// Has the bee reached the left-hand edge of the screen?
-				if (spriteBee.getPosition().x < -100)
-				{
-					// Set it up ready to be a whole new bee next frame
-					beeActive = false;
+                // Reposition the text...
+                sf::FloatRect textRect = inGameTexts.getMessageText().getLocalBounds();
+                inGameTexts.getMessageText().setOrigin(textRect.left + textRect.width / 2.0f, textRect.top + textRect.height / 2.0f);
+                inGameTexts.getMessageText().setPosition(1920 / 2.0f, 1080 / 2.0f);
 
-					// Next frame, the score will increase.
-					++score;
-				}
-			}
+                mySounds.getNoTime().play();
+            }
 
-			// Manage the clouds, cloud1
-			if (!cloud1Active)
-			{
-				// How fast is the cloud
-				srand((unsigned int)(time(0)) * 10);
-				cloud1speed = static_cast<float>((rand() % 200));
-				// How high is the bee
-				srand((unsigned int)(time(0)) * 10);
-				float height = static_cast<float>((rand() % 150));
-				spriteCloud1.setPosition(-200, height);
-				cloud1Active = true;
-			}
-			else
-			{
-				spriteCloud1.setPosition(spriteCloud1.getPosition().x + (cloud1speed * dt.asSeconds()), spriteCloud1.getPosition().y);
-				// Has the cloud reached the right hand edge of the screen?
-				if (spriteCloud1.getPosition().x > 1920)
-				{
-					// Set it up ready to be a whole new cloud next frame
-					cloud1Active = false;
-				}
-			}
+            // Setup the bee
+            if (!flyingBee.getFlyStatus())
+            {
+                // The speed of bee
+                std::mt19937 myRandom{ std::random_device{}() };
+                std::uniform_int_distribution myList{ 200, 399 };
+                flyingBee.setSpeedStatus(static_cast<float>(myList(myRandom)));
 
-			// Manage the clouds, cloud2
-			if (!cloud2Active)
-			{
-				// How fast is the cloud
-				srand((unsigned int)time(0) * 20);
-				cloud2speed = static_cast<float>((rand() % 200));
-				// How high is the cloud
-				srand((unsigned int)time(0) * 20);
-				float height = static_cast<float>((rand() % 300) - 150);
-				spriteCloud2.setPosition(-200, height);
-				cloud2Active = true;
-			}
-			else
-			{
-				spriteCloud2.setPosition(
-					spriteCloud2.getPosition().x +
-					(cloud2speed * dt.asSeconds()),
-					spriteCloud2.getPosition().y);
-				// Has the cloud reached the right hand edge of the screen?
-				if (spriteCloud2.getPosition().x > 1920)
-				{
-					// Set it up ready to be a whole new cloud next frame
-					cloud2Active = false;
-				}
-			}
+                // Position on the Y-Axis
+                std::uniform_int_distribution myListTwo{ 500, 999 };
+                flyingBee.getSprite().setPosition(2000.0f, static_cast<float>(myListTwo(myRandom)));
 
-			// Manage the clouds, cloud3
-			if (!cloud3Active)
-			{
-				// How fast is the cloud
-				srand((unsigned int)time(0) * 30);
-				cloud3speed = static_cast<float>((rand() % 200));
-				// How high is the cloud
-				srand((unsigned int)time(0) * 30);
-				float height = static_cast<float>((rand() % 450) - 150);
-				spriteCloud3.setPosition(-200, height);
-				cloud3Active = true;
-			}
-			else
-			{
-				spriteCloud3.setPosition(
-					spriteCloud3.getPosition().x +
-					(cloud3speed * dt.asSeconds()),
-					spriteCloud3.getPosition().y);
-				// Has the cloud reached the right hand edge of the screen?
-				if (spriteCloud3.getPosition().x > 1920)
-				{
-					// Set it up ready to be a whole new cloud next frame
-					cloud3Active = false;
-				}
-			}
+                // The bee is now ready to fly
+                flyingBee.setFlyStatus(true);
+            }
+            // Fly the bee
+            else
+            {
+                flyingBee.getSprite().setPosition(flyingBee.getSprite().getPosition().x - (flyingBee.getSpeedStatus() * elapsedTime.asSeconds()), flyingBee.getSprite().getPosition().y);
 
-			// Update the score text
-			std::stringstream ss;
-			ss << "Score : " << score;
-			scoreText.setString(ss.str());
+                // In case the bee reaches the left-hand side of the screen...
+                if (flyingBee.getSprite().getPosition().x < -100)
+                {
+                    // the bee is inactive now.
+                    flyingBee.setFlyStatus(false);
+                }
+            }
 
-			// Update the branch sprites
-			for (int i = 0; i < NUM_BRANCHES; i++)
-			{
-				float height = static_cast<float>(i * 150);
-				if (branchPositions[i] == side::LEFT)
-				{
-					// Move the sprite to the left side.
-					branches[i].setPosition(610, height);
-					// Flip the sprite round the other way
-					branches[i].setRotation(180);
-				}
-				else if (branchPositions[i] == side::RIGHT)
-				{
-					// Move the sprite to the right side.
-					branches[i].setPosition(1330, height);
-					// Flip the sprite round the other way
-					branches[i].setRotation(0);
-				}
-				else
-				{
-					// Hide the branches
-					branches[i].setPosition(3000, height);
-				}
-			}
+            // Setup the clouds
+            for (size_t i = 0; i < clouds.size(); i++)
+            {
+                if (!clouds.at(i).getFlyStatus())
+                {
+                    // The speed of clouds
+                    std::mt19937 myRandom{ std::random_device{}() };
+                    std::uniform_int_distribution myList{ 0, 500 };
+                    clouds.at(i).setSpeedStatus(static_cast<float>(myList(myRandom)));
 
-			// Handle a flying log
-			if (logActive)
-			{
-				spriteLog.setPosition(spriteLog.getPosition().x + (logSpeedX * dt.asSeconds()), spriteLog.getPosition().y + (logSpeedY * dt.asSeconds()));
+                    // Position on the Y-Axis
+                    std::uniform_int_distribution myListTwo{ 0, 150 };
+                    clouds.at(i).getSprite().setPosition(-200.0f, static_cast<float>(myListTwo(myRandom)));
 
-				// Has the log reached the right hand edge?
-				if (spriteLog.getPosition().x < -100 || spriteLog.getPosition().x > 2000)
-				{
-					// Set it up ready to be whole a new log next frame
-					logActive = false;
-					spriteLog.setPosition(810, 720);
-				}
-			}
+                    // The bee is now ready to fly
+                    clouds.at(i).setFlyStatus(true);
+                }
+                else
+                {
+                    clouds.at(i).getSprite().setPosition(clouds.at(i).getSprite().getPosition().x + (clouds.at(i).getSpeedStatus() * elapsedTime.asSeconds()), clouds.at(i).getSprite().getPosition().y);
 
-			// Has the player been squished by a branch?
-			if (branchPositions[5] == playerSide)
-			{
-				// Death
-				paused = true;
-				acceptInput = false;
+                    // In case the cloud reaches the left-hand side of the screen...
+                    if (clouds.at(i).getSprite().getPosition().x > 1920)
+                    {
+                        // The cloud is inactive
+                        clouds.at(i).setFlyStatus(false);
+                    }
+                }
+            }
 
-				// Draw the gravestone
-				spriteRIP.setPosition(525,760);
+            // Setup the branches
+            for (size_t i = 0; i < branches.size(); i++)
+            {
+                float height{ static_cast<float>(i * 150) };
+                if (branches.at(i).getBranchPosition() == branchSide::LEFT)
+                {
+                    // Move the branch sprite to the left side...
+                    branches.at(i).getSprite().setPosition(610, height);
 
-				// Hide the player
-				spritePlayer.setPosition(2000, 660);
+                    // Flip the branch sprite to the other way
+                    branches.at(i).getSprite().setRotation(180);
+                }
+                else if (branches.at(i).getBranchPosition() == branchSide::RIGHT)
+                {
+                    // Move the branch sprite to the right side...
+                    branches.at(i).getSprite().setPosition(1330, height);
 
-				// Change the text message 
-				messageText.setString("SQUISHED!!!");
-				FloatRect textRect = messageText.getLocalBounds();
-				messageText.setOrigin(textRect.left + textRect.width / 2.0f, textRect.top + textRect.height / 2.0f);
-				messageText.setPosition(1920 / 2.0f, 1080 / 2.0f);
+                    // Flip the branch sprite to the normal
+                    branches.at(i).getSprite().setRotation(0);
+                }
+                else
+                {
+                    // Hide the branch
+                    branches.at(i).getSprite().setPosition(3000, height);
+                }
+            }
 
-				// Play the death sound
-				death.play();
-			}
-		}
+            // Handle flying logs
+            if (pieceOfWood.getCutStatus())
+            {
+                pieceOfWood.getSprite().setPosition(pieceOfWood.getSprite().getPosition().x + (pieceOfWood.getSpeedX() * elapsedTime.asSeconds()), pieceOfWood.getSprite().getPosition().y + (pieceOfWood.getSpeedY() * elapsedTime.asSeconds()));
+                
+                // If the log reached the right edge?
+                if (pieceOfWood.getSprite().getPosition().x < -100 || pieceOfWood.getSprite().getPosition().x > 2000)
+                {
+                    // Makes it ready to be a whole new log next frame
+                    pieceOfWood.setCutStatus(false);
+                    pieceOfWood.getSprite().setPosition(static_cast<float>(810), static_cast<float>(720));
+                }
+            }
 
-		// ## Draw the scene ##
-		// I. Clears everything from the last frame
-		window.clear();
+            // Has the player been squished?
+            if (static_cast<int>(branches.at(5).getBranchPosition()) == static_cast<int>(mainPlayer.getBranchPosition()))
+            {
+                // Death 
+                isGamePaused = true;
+                acceptInput = false;
 
-		// II. Draw our game scene here...
-		window.draw(spriteBackground);
-		window.draw(spriteCloud1);
-		window.draw(spriteCloud2);
-		window.draw(spriteCloud3);
-		for (int i = 0; i < NUM_BRANCHES; i++)
-		{
-			window.draw(branches[i]);
-		}
-		window.draw(spriteTree);
-		window.draw(spritePlayer);
-		window.draw(spriteAxe);
-		window.draw(spriteLog);
-		window.draw(spriteRIP);
-		window.draw(spriteBee);
-		window.draw(scoreText);
-		window.draw(timeBar);
-		if (paused)
-		{
-			window.draw(messageText);
-		}
+                // Draw the Gravestone
+                ripStone.getSprite().setPosition(525.0f, 760.0f);
+                
+                // Hide the player
+                mainPlayer.getSprite().setPosition(2000.0f, 660.0f);
 
-		// III. Show everything that we drew...
-		window.display();
-	}
-	return 0;
+                // Change the text message and center it to the screen
+                inGameTexts.setMessageText("SQUISHED!!!");
+                sf::FloatRect textRect = inGameTexts.getMessageText().getLocalBounds();
+                inGameTexts.getMessageText().setOrigin( textRect.left + textRect.width / 2.0f, textRect.top + textRect.height / 2.0f);
+                inGameTexts.getMessageText().setPosition(1920 / 2.0f, 1080 / 2.0f);
+
+                mySounds.getDeath().play();
+            }
+
+            // Handle in game texts
+            std::stringstream ss;
+            ss << "Score: " << score;
+            inGameTexts.setScoreText(ss.str());
+        }
+        /****************************************
+        Draw the scene
+        ****************************************/
+        // Clear everything from the last frame
+        window.clear();
+
+        // Draw our game scene here
+        window.draw(mainBackGround.getSprite());
+        for (auto& cloud : clouds)
+        {
+            window.draw(cloud.getSprite());
+        }
+        for (auto& branch : branches)
+        {
+            window.draw(branch.getSprite());
+        }
+        window.draw(fellingTree.getSprite());
+        window.draw(mainPlayer.getSprite());
+        window.draw(mainPlayerAxe.getSprite());
+        window.draw(pieceOfWood.getSprite());
+        window.draw(ripStone.getSprite());
+        window.draw(flyingBee.getSprite());
+        window.draw(inGameTexts.getScoreText());
+        window.draw(inGameTimeBar.getTimeBar());
+        if (isGamePaused)
+        {
+            window.draw(inGameTexts.getMessageText());
+        }
+
+        // Show everything we just drew
+        window.display();
+    }
+    return 0;
 }
 
-void updateBranches(int seed)
+void updateBranches(std::vector<Branch>& branchVector)
 {
-	// Move all the branches down one place
-	for (int i = NUM_BRANCHES - 1; i > 0; --i)
-	{
-		branchPositions[i] = branchPositions[i - 1];
-	}
+    std::mt19937 myRandom{ std::random_device{}() };
+    std::uniform_int_distribution myList{ 0, 5 };
 
-	// Spawn new branches at position 0
-	// LEFT, RIGHT, NONE
-	srand((unsigned int)(time(0)) + seed);
-	int r = (rand() % 5);
-	switch (r)
-	{
-	case 0:
-		branchPositions[0] = side::LEFT;
-		break;
-	case 1:
-		branchPositions[0] = side::RIGHT;
-		break;
-	default:
-		branchPositions[0] = side::NONE;
-		break;
-	}
+    for (size_t i = branchVector.size() - 1 ; i > 0 ; --i)
+    {
+        branchVector.at(i).getBranchPosition() = branchVector.at(i - 1).getBranchPosition();
+    }
+
+    int r = myList(myRandom);
+    switch (r)
+    {
+    case 0:
+        branchVector.at(0).setBranchPosition(branchSide::LEFT);
+        break;
+    case 1:
+        branchVector.at(0).setBranchPosition(branchSide::RIGHT);
+        break;
+    default:
+        branchVector.at(0).setBranchPosition(branchSide::NONE);
+        break;
+    }
 }
